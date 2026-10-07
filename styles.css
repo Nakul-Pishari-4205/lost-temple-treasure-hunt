@@ -111,6 +111,11 @@ h2 { margin-top: 12px; font: 600 clamp(30px, 5vw, 41px)/1.06 var(--serif); lette
 .score-value { margin-top: 6px; color: #f0d294; font: 15px var(--mono); letter-spacing: .06em; }
 .icon-button { width: 42px; height: 42px; margin-left: auto; border: 1px solid rgba(231, 215, 180, .2); color: #ede2ca; background: rgba(16, 21, 17, .72); cursor: pointer; pointer-events: auto; backdrop-filter: blur(8px); }
 .pause-button { font-size: 17px; }
+.home-button { display: inline-flex; width: 70px; margin-left: 0; align-items: center; justify-content: center; gap: 7px; }
+.home-glyph { position: relative; width: 13px; height: 10px; margin-top: 4px; border: 1px solid #e2c78f; border-top: 0; }
+.home-glyph::before { position: absolute; top: -5px; left: 1px; width: 8px; height: 8px; transform: rotate(45deg); border-top: 1px solid #e2c78f; border-left: 1px solid #e2c78f; content: ''; }
+.home-glyph::after { position: absolute; bottom: 0; left: 4px; width: 4px; height: 6px; border: 1px solid rgba(226, 199, 143, .7); border-bottom: 0; content: ''; }
+.home-label { color: #d7c9ab; font: 8px var(--mono); letter-spacing: .09em; }
 .hud-bottom { position: absolute; right: 26px; bottom: max(23px, env(safe-area-inset-bottom)); left: 26px; display: flex; align-items: flex-end; justify-content: space-between; }
 .hud-briefing { display: grid; justify-items: start; gap: 8px; }
 .objective-pill { display: flex; align-items: center; gap: 9px; max-width: 60%; min-height: 37px; padding: 0 13px; border: 1px solid rgba(231, 215, 180, .16); color: #e3d7bf; background: rgba(16, 21, 17, .65); font-size: 9px; letter-spacing: .06em; }
@@ -158,6 +163,9 @@ h2 { margin-top: 12px; font: 600 clamp(30px, 5vw, 41px)/1.06 var(--serif); lette
   .relic-count { font-size: 17px; }
   .score-value { font-size: 12px; }
   .icon-button { width: 37px; height: 37px; }
+  .home-button { width: 61px; gap: 5px; }
+  .home-glyph { transform: scale(.9); }
+  .home-label { font-size: 7px; }
   .hud-bottom { right: 14px; bottom: max(140px, calc(120px + env(safe-area-inset-bottom))); left: 14px; }
   .objective-pill { max-width: calc(100vw - 28px); min-height: 33px; padding: 0 9px; font-size: 7px; line-height: 1.5; }
   .control-legend { max-width: calc(100vw - 28px); gap: 4px; padding: 6px; font-size: 7px; }

@@ -99,6 +99,8 @@ async function boot() {
   $('replay-button').addEventListener('click', () => startGame(true));
   $('menu-button').addEventListener('click', () => showScreen('menu'));
   $('pause-button').addEventListener('click', pauseGame);
+  $('home-button').addEventListener('click', returnHome);
+  $('pause-home-button').addEventListener('click', returnHome);
   $('sound-toggle').addEventListener('change', (event) => {
     settings.sound = event.target.checked;
     if (!settings.sound) stopAmbience();
@@ -585,6 +587,18 @@ function resumeGame() {
   startAmbience();
 }
 
+function returnHome() {
+  if (state === 'menu') return;
+  keys = Object.create(null);
+  stick.active = false;
+  stick.x = 0;
+  stick.y = 0;
+  mobileButtons = { interact: false, jump: false, sprint: false };
+  ui.prompt.classList.remove('visible');
+  ui.toast.classList.remove('show');
+  showScreen('menu');
+}
+
 function finishGame(won) {
   if (state !== 'playing') return;
   state = won ? 'victory' : 'defeat';
@@ -614,6 +628,10 @@ function onKeyDown(event) {
   if (state === 'playing' && (key.startsWith('arrow') || key === ' ')) event.preventDefault();
   if (state === 'playing') keys[key] = true;
   if (event.repeat) return;
+  if (key === 'h') {
+    returnHome();
+    return;
+  }
   if (key === 'escape' || key === 'p') {
     if (state === 'playing') pauseGame();
     else if (state === 'paused') resumeGame();
@@ -635,11 +653,12 @@ function keyForEvent(event) {
   if (event.code === 'Space') return ' ';
   if (event.code === 'Escape') return 'escape';
   if (event.code === 'KeyP') return 'p';
+  if (event.code === 'KeyH') return 'h';
   if (event.code === 'KeyE') return 'e';
   if (event.code === 'Enter') return 'enter';
   if (event.code === 'ArrowUp' || event.code === 'ArrowDown' || event.code === 'ArrowLeft' || event.code === 'ArrowRight') return event.code.toLowerCase();
   const key = event.key.toLowerCase();
-  return ['w', 'a', 's', 'd', 'shift', ' ', 'escape', 'p', 'e', 'enter', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key) ? key : null;
+  return ['w', 'a', 's', 'd', 'shift', ' ', 'escape', 'p', 'h', 'e', 'enter', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key) ? key : null;
 }
 
 function setupTouchControls() {

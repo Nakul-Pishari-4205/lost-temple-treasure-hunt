@@ -36,6 +36,10 @@
           <button id="pause-button" class="icon-button pause-button" aria-label="Pause game" title="Pause (Esc)">
             <span aria-hidden="true">Ⅱ</span>
           </button>
+          <button id="home-button" class="icon-button home-button" aria-label="Return to home screen" title="Home (H)">
+            <span class="home-glyph" aria-hidden="true"></span>
+            <span class="home-label">HOME</span>
+          </button>
         </div>
 
         <div class="hud-bottom">
@@ -47,6 +51,7 @@
               <span><kbd>SPACE</kbd> JUMP</span>
               <span><kbd>E</kbd> INTERACT</span>
               <span><kbd>ESC</kbd> PAUSE</span>
+              <span><kbd>H</kbd> HOME</span>
             </div>
           </div>
           <div id="interaction-prompt" class="interaction-prompt" aria-live="assertive"></div>
@@ -100,6 +105,10 @@
               <div class="key-group"><kbd>E</kbd></div>
               <div><strong>INTERACT</strong><span>Open chests and claim treasure</span></div>
             </div>
+            <div class="instruction">
+              <div class="key-group"><kbd>H</kbd></div>
+              <div><strong>HOME</strong><span>Return to the title screen</span></div>
+            </div>
           </div>
           <div class="howto-tip"><span class="tip-spark" aria-hidden="true"></span> Find all <b>three relics</b>, then reach the sealed gate in the north. Avoid the spikes — you only have three chances.</div>
           <button id="howto-back" class="primary-button"><span>GOT IT</span><b aria-hidden="true"></b></button>
@@ -132,6 +141,7 @@
           <p class="panel-intro">The temple will wait.</p>
           <button id="resume-button" class="primary-button"><span>RESUME</span><b aria-hidden="true"></b></button>
           <button id="restart-button" class="secondary-button">RESTART EXPEDITION</button>
+          <button id="pause-home-button" class="secondary-button">RETURN HOME <kbd>H</kbd></button>
         </div>
       </section>
 
