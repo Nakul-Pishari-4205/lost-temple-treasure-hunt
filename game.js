@@ -632,7 +632,11 @@ function onKeyDown(event) {
     returnHome();
     return;
   }
-  if (key === 'escape' || key === 'p') {
+  if (key === 'escape') {
+    returnHome();
+    return;
+  }
+  if (key === 'p') {
     if (state === 'playing') pauseGame();
     else if (state === 'paused') resumeGame();
   }
