@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#111510">
+    <meta name="description" content="Explore a forgotten temple, dodge its traps, and recover the lost relics.">
+    <title>Treasure Hunt: Lost Temple</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main id="game-shell" aria-label="Treasure Hunt: Lost Temple game">
+      <div id="game-view" aria-label="Game world" role="application">
+        <canvas id="game-canvas" aria-label="Explore the temple with the controls shown on screen"></canvas>
+      </div>
+
+      <div id="hud" class="hud is-hidden" aria-live="polite">
+        <div class="hud-top">
+          <section class="hud-card health-card" aria-label="Explorer health">
+            <span class="hud-label">VITALITY</span>
+            <div class="health-row">
+              <span class="vitality-mark" aria-hidden="true"></span>
+              <div class="health-track"><div id="health-fill" class="health-fill"></div></div>
+              <span id="health-value" class="health-value">100</span>
+            </div>
+          </section>
+          <section class="hud-card objective-card">
+            <span class="hud-label">RELICS RECOVERED</span>
+            <div id="relic-count" class="relic-count"><span class="relic-mark" aria-hidden="true"></span> 0 <small>/ 3</small></div>
+          </section>
+          <section class="hud-card score-card">
+            <span class="hud-label">SCORE</span>
+            <div id="score-value" class="score-value">000000</div>
+          </section>
+          <button id="pause-button" class="icon-button pause-button" aria-label="Pause game" title="Pause (Esc)">
+            <span aria-hidden="true">Ⅱ</span>
+          </button>
+        </div>
+
+        <div class="hud-bottom">
+          <div class="hud-briefing">
+            <div class="objective-pill"><span class="objective-dot"></span><span id="objective-text">Find the three ancient relics</span></div>
+            <div class="control-legend" aria-label="Controls: W A S D move, Shift sprint, Space jump, E interact, Escape pause">
+              <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> MOVE</span>
+              <span><kbd>SHIFT</kbd> SPRINT</span>
+              <span><kbd>SPACE</kbd> JUMP</span>
+              <span><kbd>E</kbd> INTERACT</span>
+              <span><kbd>ESC</kbd> PAUSE</span>
+            </div>
+          </div>
+          <div id="interaction-prompt" class="interaction-prompt" aria-live="assertive"></div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+      <section id="menu-screen" class="screen">
+        <div class="menu-backdrop"></div>
+        <div class="menu-content">
+          <div class="eyebrow"><span class="eyebrow-line"></span> AN ADVENTURE AWAITS <span class="eyebrow-line"></span></div>
+          <div class="title-mark" aria-hidden="true">
+            <span class="title-diamond"></span>
+            <span class="title-sun"></span>
+            <span class="title-diamond"></span>
+          </div>
+          <h1>THE LOST<br><em>TEMPLE</em></h1>
+          <p class="menu-subtitle">A forgotten world. Three lost relics.<br>One chance to make it out alive.</p>
+          <button id="start-button" class="primary-button"><span>BEGIN EXPEDITION</span><b aria-hidden="true"></b></button>
+          <div class="menu-links">
+            <button id="howto-button" class="text-button">HOW TO PLAY</button>
+            <span aria-hidden="true">·</span>
+            <button id="settings-button" class="text-button">SETTINGS</button>
+          </div>
+          <div id="best-score" class="best-score"></div>
+        </div>
+        <div class="menu-footer"><span>FIELD JOURNAL · VOL. 01</span><span>EXPEDITION 1897</span></div>
+        <div class="version-tag">A LOW-POLY ADVENTURE</div>
+      </section>
+
+      <section id="howto-screen" class="screen is-hidden">
+        <div class="panel">
+          <div class="panel-kicker">FIELD NOTES · 01</div>
+          <h2>HOW TO <em>PLAY</em></h2>
+          <p class="panel-intro">The temple has been quiet for centuries. Keep it that way. On touchscreens, use the left stick and on-screen action buttons.</p>
+          <div class="instruction-grid">
+            <div class="instruction">
+              <div class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>
+              <div><strong>MOVE</strong><span>W forward · A left · S back · D right</span></div>
+            </div>
+            <div class="instruction">
+              <div class="key-group"><kbd>SHIFT</kbd></div>
+              <div><strong>SPRINT</strong><span>Move quickly, but mind your steps</span></div>
+            </div>
+            <div class="instruction">
+              <div class="key-group"><kbd>SPACE</kbd></div>
+              <div><strong>JUMP</strong><span>Leap over the temple's traps</span></div>
+            </div>
+            <div class="instruction">
+              <div class="key-group"><kbd>E</kbd></div>
+              <div><strong>INTERACT</strong><span>Open chests and claim treasure</span></div>
+            </div>
+          </div>
+          <div class="howto-tip"><span class="tip-spark" aria-hidden="true"></span> Find all <b>three relics</b>, then reach the sealed gate in the north. Avoid the spikes — you only have three chances.</div>
+          <button id="howto-back" class="primary-button"><span>GOT IT</span><b aria-hidden="true"></b></button>
+        </div>
+      </section>
+
+      <section id="settings-screen" class="screen is-hidden">
+        <div class="panel settings-panel">
+          <div class="panel-kicker">EXPEDITION CONFIGURATION</div>
+          <h2>YOUR <em>SETTINGS</em></h2>
+          <p class="panel-intro">Make yourself at home in the ruins.</p>
+          <label class="setting-row" for="sound-toggle">
+            <span><strong>AMBIENT AUDIO</strong><small>Temple atmosphere and treasure sounds</small></span>
+            <input id="sound-toggle" type="checkbox" checked>
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <label class="setting-row" for="reduced-motion">
+            <span><strong>REDUCED MOTION</strong><small>Soften camera sway and visual effects</small></span>
+            <input id="reduced-motion" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <button id="settings-back" class="primary-button"><span>BACK TO MENU</span><b aria-hidden="true"></b></button>
+        </div>
+      </section>
+
+      <section id="pause-screen" class="screen is-hidden">
+        <div class="panel compact-panel">
+          <div class="panel-kicker">TAKE A BREATH</div>
+          <h2>EXPEDITION <em>PAUSED</em></h2>
+          <p class="panel-intro">The temple will wait.</p>
+          <button id="resume-button" class="primary-button"><span>RESUME</span><b aria-hidden="true"></b></button>
+          <button id="restart-button" class="secondary-button">RESTART EXPEDITION</button>
+        </div>
+      </section>
+
+      <section id="result-screen" class="screen is-hidden">
+        <div class="panel compact-panel result-panel">
+          <div id="result-kicker" class="panel-kicker">EXPEDITION COMPLETE</div>
+          <h2 id="result-title">THE TEMPLE <em>RELEASES YOU</em></h2>
+          <p id="result-copy" class="panel-intro"></p>
+          <div class="result-score"><span>FINAL SCORE</span><strong id="result-score">000000</strong></div>
+          <button id="replay-button" class="primary-button"><span>PLAY AGAIN</span><b aria-hidden="true"></b></button>
+          <button id="menu-button" class="secondary-button">RETURN TO MENU</button>
+        </div>
+      </section>
+
+      <div id="mobile-controls" class="mobile-controls is-hidden" aria-label="Touch controls">
+        <div id="move-stick" class="move-stick" role="application" aria-label="Movement joystick"><div class="stick-knob"></div></div>
+        <div class="mobile-actions">
+          <button id="mobile-interact" class="touch-button interact-touch" aria-label="Interact">E</button>
+          <button id="mobile-sprint" class="touch-button sprint-touch" aria-label="Sprint">RUN</button>
+          <button id="mobile-jump" class="touch-button jump-touch" aria-label="Jump"><span class="jump-icon" aria-hidden="true"></span></button>
+        </div>
+      </div>
+
+      <div id="loading-screen" class="loading-screen">
+        <div class="loading-sigil" aria-hidden="true"></div>
+        <span>UNFOLDING THE MAP</span>
+        <div class="loading-track"><i></i></div>
+      </div>
+    </main>
+    <script type="module" src="game.js"></script>
+  </body>
+</html>
