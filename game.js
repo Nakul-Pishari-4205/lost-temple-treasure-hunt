@@ -1,5 +1,6 @@
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
 const STORAGE_KEY = 'lost-temple-save-v1';
+const FIREBASE_VERSION = '11.0.2';
 const $ = (id) => document.getElementById(id);
 
 const ui = {
@@ -22,6 +23,12 @@ const ui = {
 };
 
 const saved = readSave();
+let accountSave = null;
+let accountUser = null;
+let firebaseServices = null;
+let accountReady = false;
+let accountRevision = 0;
+let cloudSaveQueue = Promise.resolve();
 const settings = {
   sound: saved.sound !== false,
   reducedMotion: saved.reducedMotion === true,
@@ -64,31 +71,124 @@ let mobileButtons = { interact: false, jump: false, sprint: false };
 function readSave() {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    return normalizeSave(data);
   } catch (error) {
     console.warn('Could not read expedition settings from local storage.', error);
-    return {};
+    return normalizeSave({});
   }
 }
 
-function writeSave() {
+function normalizeSave(data) {
+  const value = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  const safeCount = (count) => {
+    const number = Number(count);
+    return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+  };
+  return {
+    sound: value.sound !== false,
+    reducedMotion: value.reducedMotion === true,
+    bestScore: safeCount(value.bestScore),
+    expeditions: safeCount(value.expeditions),
+    relicsFound: safeCount(value.relicsFound),
+  };
+}
+
+function activeSave() {
+  return accountUser ? accountSave : saved;
+}
+
+function updateAccountSummary() {
+  const profile = activeSave() || saved;
+  const best = profile.bestScore;
+  $('best-score').textContent = best > 0 ? `PERSONAL BEST  ·  ${String(best).padStart(6, '0')}` : '';
+  if (accountUser) {
+    $('account-summary').textContent = 'Cloud sync enabled · saved to your account';
+    $('account-email').textContent = accountUser.email || accountUser.displayName || 'Signed-in adventurer';
+    $('account-avatar').textContent = (accountUser.displayName || accountUser.email || 'A').trim().charAt(0).toUpperCase();
+    $('account-stats').textContent = `${profile.expeditions} EXPEDITIONS  ·  ${profile.relicsFound} RELICS RECOVERED`;
+  } else {
+    $('account-summary').textContent = 'Playing as a guest · this device only';
+  }
+}
+
+function applySave(profile) {
+  const normalized = normalizeSave(profile);
+  if (accountUser) accountSave = normalized;
+  else Object.assign(saved, normalized);
+  settings.sound = normalized.sound;
+  settings.reducedMotion = normalized.reducedMotion;
+  $('sound-toggle').checked = settings.sound;
+  $('reduced-motion').checked = settings.reducedMotion;
+  updateAccountSummary();
+}
+
+function writeSave({ completedExpedition = false, recoveredRelics = 0 } = {}) {
   try {
-    saved.bestScore = Math.max(Number(saved.bestScore) || 0, score);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    const profile = activeSave();
+    if (accountUser && !accountReady) {
+      setAccountStatus('Your account save is still loading. This change has not been saved yet.');
+      return;
+    }
+    profile.bestScore = Math.max(profile.bestScore, score);
+    const saveData = {
       sound: settings.sound,
       reducedMotion: settings.reducedMotion,
-      bestScore: saved.bestScore,
-    }));
+      bestScore: profile.bestScore,
+      expeditions: profile.expeditions,
+      relicsFound: profile.relicsFound,
+      updatedAt: new Date().toISOString(),
+    };
+    if (accountUser) {
+      const { firestore, doc, runTransaction } = firebaseServices;
+      const userId = accountUser.uid;
+      cloudSaveQueue = cloudSaveQueue
+        .catch((error) => console.error('A previous cloud save failed.', error))
+        .then(() => runTransaction(firestore, async (transaction) => {
+          const profileRef = doc(firestore, 'users', userId, 'gameData', 'profile');
+          const snapshot = await transaction.get(profileRef);
+          const remote = normalizeSave(snapshot.exists() ? snapshot.data() : {});
+          const synchronized = {
+            ...saveData,
+            bestScore: Math.max(remote.bestScore, saveData.bestScore),
+            expeditions: completedExpedition ? remote.expeditions + 1 : Math.max(remote.expeditions, saveData.expeditions),
+            relicsFound: completedExpedition ? remote.relicsFound + recoveredRelics : Math.max(remote.relicsFound, saveData.relicsFound),
+          };
+          transaction.set(profileRef, synchronized, { merge: true });
+          return synchronized;
+        }))
+        .then((synchronized) => {
+          if (accountUser?.uid === userId) {
+            accountSave = normalizeSave(synchronized);
+            updateAccountSummary();
+            setAccountStatus('Your expedition is synced to your account.');
+          }
+        })
+        .catch((error) => {
+          console.error('Could not sync your expedition to the account.', error);
+          if (accountUser?.uid === userId) setAccountStatus('Cloud save failed. Check your connection and Firebase setup, then try again.');
+        });
+    } else {
+      Object.assign(saved, saveData);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+      setAccountStatus('Guest saves stay on this device. Sign in to sync your expedition across devices.');
+    }
+    updateAccountSummary();
   } catch (error) {
-    console.warn('Could not save expedition settings to local storage.', error);
+    console.error('Could not save expedition profile.', error);
+    setAccountStatus(accountUser
+      ? 'Could not save your expedition to the account. Check your Firebase setup.'
+      : 'Could not save guest progress on this device. Check browser storage settings.');
   }
 }
 
 async function boot() {
   $('sound-toggle').checked = settings.sound;
   $('reduced-motion').checked = settings.reducedMotion;
-  const best = Number(saved.bestScore) || 0;
-  $('best-score').textContent = best > 0 ? `PERSONAL BEST  ·  ${String(best).padStart(6, '0')}` : '';
+  updateAccountSummary();
+  document.querySelectorAll('[data-provider]').forEach((button) => {
+    button.addEventListener('click', () => signIn(button.dataset.provider));
+  });
+  $('signout-button').addEventListener('click', signOut);
   $('start-button').addEventListener('click', () => startGame(true));
   $('howto-button').addEventListener('click', () => showScreen('howto'));
   $('settings-button').addEventListener('click', () => showScreen('settings'));
@@ -126,6 +226,7 @@ async function boot() {
   });
   window.addEventListener('resize', resize);
   setupTouchControls();
+  void initializeAccounts();
 
   let rendererTimeout;
   try {
@@ -151,6 +252,149 @@ async function boot() {
   requestAnimationFrame(frame);
   window.setTimeout(() => ui.loading.classList.add('done'), 350);
   window.setTimeout(() => ui.loading.classList.add('is-hidden'), 900);
+}
+
+function setAccountStatus(message, isError = false) {
+  const status = $('account-status');
+  status.textContent = message;
+  status.classList.toggle('account-status-error', isError);
+}
+
+function updateAccountControls(user) {
+  $('account-providers').classList.toggle('is-hidden', Boolean(user));
+  $('account-profile').classList.toggle('is-hidden', !user);
+  $('account-profile').setAttribute('aria-hidden', String(!user));
+  $('account-providers').setAttribute('aria-hidden', String(Boolean(user)));
+}
+
+function accountErrorMessage(error) {
+  switch (error?.code) {
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in was cancelled.';
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the sign-in window. Allow pop-ups and try again.';
+    case 'auth/unauthorized-domain':
+      return 'This website is not registered as an authorized domain in Firebase.';
+    case 'auth/operation-not-allowed':
+      return 'This sign-in provider is not enabled in the Firebase console.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with this email. Sign in using its original provider.';
+    default:
+      return 'Sign-in failed. Check your provider settings and internet connection, then try again.';
+  }
+}
+
+async function initializeAccounts() {
+  try {
+    const { firebaseConfig } = await import('./firebase-config.js');
+    if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+      setAccountStatus('Guest saves stay on this device. Add Firebase configuration to enable Google, Microsoft, and Apple account sync.');
+      return;
+    }
+    const sdkUrl = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
+    const [appSdk, authSdk, firestoreSdk] = await Promise.all([
+      import(`${sdkUrl}/firebase-app.js`),
+      import(`${sdkUrl}/firebase-auth.js`),
+      import(`${sdkUrl}/firebase-firestore.js`),
+    ]);
+    const app = appSdk.initializeApp(firebaseConfig);
+    const auth = authSdk.getAuth(app);
+    const firestore = firestoreSdk.getFirestore(app);
+    firebaseServices = { auth, firestore, ...authSdk, ...firestoreSdk };
+    await authSdk.setPersistence(auth, authSdk.browserLocalPersistence);
+    authSdk.onAuthStateChanged(auth, (user) => {
+      void handleAccountChange(user);
+    }, (error) => {
+      console.error('Firebase authentication state could not be read.', error);
+      setAccountStatus('Could not read your sign-in state. Refresh the page and try again.', true);
+    });
+    $('account-setup-link').classList.add('is-hidden');
+    authSdk.getRedirectResult(auth).catch((error) => {
+      console.error('The account sign-in redirect failed.', error);
+      setAccountStatus(accountErrorMessage(error), true);
+    });
+  } catch (error) {
+    console.error('Could not initialize account sign-in.', error);
+    setAccountStatus('Cloud sign-in could not initialize. Check the Firebase configuration and try again.', true);
+  }
+}
+
+async function handleAccountChange(user) {
+  const revision = ++accountRevision;
+  accountUser = user;
+  accountSave = user ? normalizeSave({}) : null;
+  accountReady = !user;
+  updateAccountControls(user);
+  if (!user) {
+    applySave(saved);
+    setAccountStatus('Playing as a guest. Guest saves stay on this device.');
+    return;
+  }
+
+  updateAccountSummary();
+  $('account-summary').textContent = 'Loading your private expedition save…';
+  $('account-email').textContent = user.email || user.displayName || 'Signed-in adventurer';
+  $('account-stats').textContent = '';
+  setAccountStatus('Loading your account save…');
+  try {
+    const { firestore, doc, getDoc } = firebaseServices;
+    const snapshot = await getDoc(doc(firestore, 'users', user.uid, 'gameData', 'profile'));
+    if (revision !== accountRevision || accountUser?.uid !== user.uid) return;
+    applySave(snapshot.exists() ? snapshot.data() : {});
+    accountReady = true;
+    setAccountStatus(snapshot.exists()
+      ? 'Your private expedition save is synced to this account.'
+      : 'Account ready. Your expedition data will now be saved to this account.');
+  } catch (error) {
+    console.error('Could not load the signed-in expedition save.', error);
+    if (revision === accountRevision && accountUser?.uid === user.uid) {
+      accountReady = false;
+      setAccountStatus('Could not load this account save. Check your connection and Firestore rules; guest data remains separate.', true);
+    }
+  }
+}
+
+async function signIn(providerName) {
+  if (!firebaseServices) {
+    setAccountStatus('Account sign-in needs Firebase project configuration. Follow FIREBASE_SETUP.md, then reload the game.', true);
+    return;
+  }
+  let provider;
+  if (providerName === 'google') {
+    provider = new firebaseServices.GoogleAuthProvider();
+  } else if (providerName === 'microsoft') {
+    provider = new firebaseServices.OAuthProvider('microsoft.com');
+    provider.setCustomParameters({ prompt: 'select_account' });
+  } else if (providerName === 'apple') {
+    provider = new firebaseServices.OAuthProvider('apple.com');
+    provider.addScope('email');
+    provider.addScope('name');
+  } else {
+    setAccountStatus('That sign-in provider is not supported.', true);
+    return;
+  }
+
+  setAccountStatus(`Connecting to ${providerName === 'microsoft' ? 'Microsoft' : providerName}…`);
+  try {
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (mobile) await firebaseServices.signInWithRedirect(firebaseServices.auth, provider);
+    else await firebaseServices.signInWithPopup(firebaseServices.auth, provider);
+  } catch (error) {
+    console.error(`Could not sign in with ${providerName}.`, error);
+    setAccountStatus(accountErrorMessage(error), true);
+  }
+}
+
+async function signOut() {
+  if (!firebaseServices || !accountUser) return;
+  try {
+    await firebaseServices.signOut(firebaseServices.auth);
+    setAccountStatus('Signed out. Guest saves on this device have not been changed.');
+  } catch (error) {
+    console.error('Could not sign out of the expedition account.', error);
+    setAccountStatus('Sign-out failed. Check your connection and try again.', true);
+  }
 }
 
 function setupThree() {
@@ -551,6 +795,10 @@ function addParticle(x, y, z, color = 0xffc06d) {
 }
 
 function startGame(newRun = false) {
+  if (accountUser && !accountReady) {
+    setAccountStatus('Wait for your account save to finish loading, or sign out to play as a guest.', true);
+    return;
+  }
   if (newRun || state === 'menu' || state === 'victory' || state === 'defeat') makeWorld();
   state = 'playing';
   showScreen(null);
@@ -616,9 +864,11 @@ function finishGame(won) {
     ? `You recovered every relic and escaped with ${String(score).padStart(6, '0')} points. The story of the Lost Temple is yours to tell.`
     : `The ruins claimed your expedition. You recovered ${relics} of 3 relics and earned ${String(score).padStart(6, '0')} points.`;
   $('result-score').textContent = String(score).padStart(6, '0');
-  const best = Math.max(Number(saved.bestScore) || 0, score);
-  $('best-score').textContent = best > 0 ? `PERSONAL BEST  ·  ${String(best).padStart(6, '0')}` : '';
-  writeSave();
+  const profile = activeSave();
+  profile.expeditions++;
+  profile.relicsFound += relics;
+  updateAccountSummary();
+  writeSave({ completedExpedition: true, recoveredRelics: relics });
   audioPing(won ? 660 : 120, .25, won ? 'triangle' : 'sawtooth', .06);
 }
 

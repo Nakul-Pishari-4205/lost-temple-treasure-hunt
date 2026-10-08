@@ -82,6 +82,30 @@
             <span aria-hidden="true">·</span>
             <button id="settings-button" class="text-button">SETTINGS</button>
           </div>
+          <section class="account-panel" aria-label="Expedition account">
+            <div class="account-heading">
+              <span class="account-mark" aria-hidden="true"></span>
+              <div>
+                <h2>YOUR <em>EXPEDITION</em></h2>
+                <p id="account-summary">Playing as a guest · this device only</p>
+              </div>
+            </div>
+            <div id="account-providers" class="account-providers">
+              <button class="provider-button" data-provider="google"><span class="provider-monogram">G</span><span>CONTINUE WITH GOOGLE</span><b aria-hidden="true"></b></button>
+              <button class="provider-button" data-provider="microsoft"><span class="provider-monogram">M</span><span>CONTINUE WITH MICROSOFT</span><b aria-hidden="true"></b></button>
+              <button class="provider-button" data-provider="apple"><span class="provider-monogram">A</span><span>CONTINUE WITH APPLE</span><b aria-hidden="true"></b></button>
+            </div>
+            <div id="account-profile" class="account-profile is-hidden">
+              <div class="account-identity">
+                <span id="account-avatar" class="account-avatar" aria-hidden="true"></span>
+                <span id="account-email" class="account-email"></span>
+                <button id="signout-button" class="signout-button">SIGN OUT</button>
+              </div>
+              <div id="account-stats" class="account-stats"></div>
+            </div>
+            <p id="account-status" class="account-status" role="status" aria-live="polite">Guest saves stay on this device. Sign in to sync your expedition across devices.</p>
+            <a id="account-setup-link" class="account-setup-link" href="https://github.com/Nakul-Pishari-4205/lost-temple-treasure-hunt/blob/main/FIREBASE_SETUP.md" target="_blank" rel="noopener">VIEW ACCOUNT SETUP GUIDE</a>
+          </section>
           <div id="best-score" class="best-score"></div>
         </div>
         <div class="menu-footer"><span>FIELD JOURNAL · VOL. 01</span><span>EXPEDITION 1897</span></div>

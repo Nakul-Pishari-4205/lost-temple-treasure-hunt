@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/gameData/{documentId} {
+      allow read: if request.auth != null
+        && request.auth.uid == userId
+        && documentId == 'profile';
+
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && documentId == 'profile'
+        && request.resource.data.keys().hasOnly([
+          'sound',
+          'reducedMotion',
+          'bestScore',
+          'expeditions',
+          'relicsFound',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'sound',
+          'reducedMotion',
+          'bestScore',
+          'expeditions',
+          'relicsFound',
+          'updatedAt'
+        ])
+        && request.resource.data.sound is bool
+        && request.resource.data.reducedMotion is bool
+        && request.resource.data.bestScore is int
+        && request.resource.data.bestScore >= 0
+        && request.resource.data.expeditions is int
+        && request.resource.data.expeditions >= 0
+        && request.resource.data.relicsFound is int
+        && request.resource.data.relicsFound >= 0
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 40;
+    }
+  }
+}

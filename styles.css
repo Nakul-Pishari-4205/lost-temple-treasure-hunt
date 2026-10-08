@@ -44,6 +44,29 @@ h1 em, h2 em { color: var(--gold); font-weight: 600; }
 .menu-links { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 19px; color: #a99c82; }
 .text-button, .secondary-button { border: 0; color: #cfc6b4; background: transparent; font: 10px var(--mono); letter-spacing: .15em; cursor: pointer; }
 .text-button:hover, .secondary-button:hover { color: var(--gold); }
+.account-panel { width: min(390px, 100%); margin: 23px auto 0; padding: 15px; border: 1px solid rgba(231, 215, 180, .17); background: rgba(16, 21, 17, .76); text-align: left; }
+.account-heading { display: flex; align-items: center; gap: 12px; }
+.account-mark { position: relative; display: block; flex: 0 0 29px; width: 29px; height: 29px; transform: rotate(45deg); border: 1px solid rgba(223, 183, 107, .7); }
+.account-mark::before { position: absolute; inset: 6px; border: 1px solid rgba(98, 213, 192, .8); content: ''; }
+.account-heading h2 { margin: 0; font: 600 15px/1.2 var(--serif); letter-spacing: .01em; }
+.account-heading p { margin-top: 3px; color: #b1aa98; font-size: 10px; }
+.account-providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 14px; }
+.provider-button { display: flex; min-width: 0; min-height: 39px; align-items: center; justify-content: center; gap: 6px; padding: 5px 7px; border: 1px solid rgba(231, 215, 180, .2); color: #e7ddc8; background: rgba(255,255,255,.035); font: 8px/1.25 var(--mono); letter-spacing: .025em; cursor: pointer; transition: background .18s, border-color .18s, transform .18s; }
+.provider-button:hover { transform: translateY(-1px); border-color: rgba(223, 183, 107, .65); background: rgba(223, 183, 107, .1); }
+.provider-button > span:nth-child(2) { text-align: left; }
+.provider-monogram { display: grid; flex: 0 0 17px; width: 17px; height: 17px; place-items: center; border: 1px solid rgba(223, 183, 107, .35); color: #e6c77f; font: 9px var(--sans); }
+.provider-button b, .account-profile { display: none; }
+.account-profile:not(.is-hidden) { display: block; margin-top: 13px; }
+.account-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.account-avatar { display: grid; flex: 0 0 27px; width: 27px; height: 27px; place-items: center; border: 1px solid rgba(223, 183, 107, .35); border-radius: 50%; color: #edcf8e; font: 11px var(--mono); }
+.account-email { overflow: hidden; color: #eee3cb; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.signout-button { flex: 0 0 auto; margin-left: auto; padding: 6px 7px; border: 1px solid rgba(231, 215, 180, .18); color: #cfc6b4; background: transparent; font: 8px var(--mono); letter-spacing: .08em; cursor: pointer; }
+.signout-button:hover { border-color: rgba(223, 183, 107, .65); color: var(--gold); }
+.account-stats { margin: 9px 0 0 35px; color: #d2bb86; font: 8px var(--mono); letter-spacing: .08em; }
+.account-status { min-height: 24px; margin: 11px 0 0; color: #aaa796; font-size: 10px; line-height: 1.5; }
+.account-status-error { color: #e6a18a; }
+.account-setup-link { display: inline-block; margin-top: 5px; color: #d4b879; font: 8px var(--mono); letter-spacing: .08em; text-decoration: underline; text-underline-offset: 3px; }
+.account-setup-link:hover { color: #f0d294; }
 .best-score { min-height: 14px; margin-top: 23px; color: #b8a981; font-size: 9px; }
 .menu-footer { position: absolute; z-index: 1; right: 30px; bottom: max(23px, env(safe-area-inset-bottom)); left: 30px; display: flex; justify-content: space-between; color: rgba(227, 213, 182, .52); font-size: 9px; }
 .version-tag { position: absolute; top: 27px; right: 30px; color: rgba(227, 213, 182, .55); font-size: 8px; }
@@ -175,6 +198,9 @@ h2 { margin-top: 12px; font: 600 clamp(30px, 5vw, 41px)/1.06 var(--serif); lette
   .mobile-controls { display: flex; }
   .interaction-prompt { bottom: 130px; font-size: 9px; }
   .menu-content { padding-bottom: 25px; }
+  .account-panel { padding: 12px; }
+  .account-providers { grid-template-columns: 1fr; gap: 6px; }
+  .provider-button { justify-content: flex-start; min-height: 36px; padding-left: 10px; }
   .title-lockup { gap: 12px; }
   h1 { font-size: clamp(45px, 10vw, 64px); }
   .menu-footer { right: 16px; left: 16px; font-size: 7px; }
