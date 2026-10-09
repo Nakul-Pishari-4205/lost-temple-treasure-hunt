@@ -1,6 +1,18 @@
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
 const STORAGE_KEY = 'lost-temple-save-v1';
 const FIREBASE_VERSION = '11.0.2';
+const SWORDS = [
+  { name: 'Wood Sword', damage: 22, cooldown: .52, color: 0x9b6b3e },
+  { name: 'Iron Sword', damage: 34, cooldown: .47, color: 0xbac3c3 },
+  { name: 'Gold Sword', damage: 47, cooldown: .43, color: 0xf0c95c },
+  { name: 'Diamond Sword', damage: 62, cooldown: .4, color: 0x60d9d0 },
+];
+const ARMORS = [
+  { name: 'Leather Armor', reduction: .08, color: 0x47584a },
+  { name: 'Iron Armor', reduction: .18, color: 0x75858a },
+  { name: 'Gold Armor', reduction: .28, color: 0xb6984b },
+  { name: 'Diamond Armor', reduction: .38, color: 0x459c9b },
+];
 const $ = (id) => document.getElementById(id);
 
 const ui = {
@@ -17,6 +29,8 @@ const ui = {
   healthValue: $('health-value'),
   relics: $('relic-count'),
   score: $('score-value'),
+  zombies: $('zombie-count'),
+  level: $('level-label'),
   objective: $('objective-text'),
   prompt: $('interaction-prompt'),
   toast: $('toast'),
@@ -49,6 +63,15 @@ let state = 'menu';
 let score = 0;
 let health = 100;
 let relics = 0;
+let gems = 0;
+let currentLevel = 1;
+let zombies = [];
+let zombiesDefeated = 0;
+let swordTier = 0;
+let armorTier = 0;
+let attackCooldown = 0;
+let attackTimer = 0;
+let swordMesh = null;
 let chestsOpened = 0;
 let invulnerable = 0;
 let elapsed = 0;
@@ -90,7 +113,41 @@ function normalizeSave(data) {
     bestScore: safeCount(value.bestScore),
     expeditions: safeCount(value.expeditions),
     relicsFound: safeCount(value.relicsFound),
+    currentLevel: Math.max(1, safeCount(value.currentLevel)),
+    swordTier: Math.min(SWORDS.length - 1, safeCount(value.swordTier)),
+    armorTier: Math.min(ARMORS.length - 1, safeCount(value.armorTier)),
+    checkpoint: normalizeCheckpoint(value.checkpoint),
   };
+}
+
+function normalizeCheckpoint(raw) {
+  try {
+    const rawText = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    if (typeof rawText !== 'string' || rawText.length > 20000) return null;
+    const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!value || value.version !== 1 || !Number.isSafeInteger(value.level) || value.level < 1
+      || !Number.isSafeInteger(value.seed) || value.seed < 1 || value.seed > 1000000) return null;
+    const numberList = (list, max) => Array.isArray(list)
+      ? list.filter((item) => Number.isSafeInteger(item) && item >= 0 && item < max)
+      : [];
+    const bounded = (number, min, max, fallback) => Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+    return {
+      version: 1,
+      level: value.level,
+      seed: value.seed,
+      score: Number.isSafeInteger(value.score) && value.score >= 0 ? value.score : 0,
+      health: bounded(value.health, 0, 100, 100),
+      x: bounded(value.x, -37, 37, 0),
+      z: bounded(value.z, -37, 37, 29),
+      yaw: bounded(value.yaw, -Math.PI * 8, Math.PI * 8, 0),
+      pickups: numberList(value.pickups, 64).slice(0, 64),
+      chests: numberList(value.chests, 32).slice(0, 32),
+      zombies: numberList(value.zombies, 32).slice(0, 32),
+    };
+  } catch (error) {
+    console.warn('Ignoring an invalid expedition checkpoint.', error);
+    return null;
+  }
 }
 
 function activeSave() {
@@ -117,12 +174,16 @@ function applySave(profile) {
   else Object.assign(saved, normalized);
   settings.sound = normalized.sound;
   settings.reducedMotion = normalized.reducedMotion;
+  currentLevel = normalized.currentLevel;
+  const maxTier = Math.min(3, Math.floor((currentLevel - 1) / 2));
+  swordTier = Math.min(normalized.swordTier, maxTier);
+  armorTier = Math.min(normalized.armorTier, maxTier);
   $('sound-toggle').checked = settings.sound;
   $('reduced-motion').checked = settings.reducedMotion;
   updateAccountSummary();
 }
 
-function writeSave({ completedExpedition = false, recoveredRelics = 0 } = {}) {
+function writeSave({ completedExpedition = false, recoveredRelics = 0, clearCheckpoint = false } = {}) {
   try {
     const profile = activeSave();
     if (accountUser && !accountReady) {
@@ -130,12 +191,21 @@ function writeSave({ completedExpedition = false, recoveredRelics = 0 } = {}) {
       return;
     }
     profile.bestScore = Math.max(profile.bestScore, score);
+    const checkpoint = state === 'playing' || state === 'inventory'
+      ? createCheckpoint()
+      : clearCheckpoint ? null : normalizeCheckpoint(profile.checkpoint);
+    const checkpointData = JSON.stringify(checkpoint);
+    profile.checkpoint = checkpointData;
     const saveData = {
       sound: settings.sound,
       reducedMotion: settings.reducedMotion,
       bestScore: profile.bestScore,
       expeditions: profile.expeditions,
       relicsFound: profile.relicsFound,
+      currentLevel,
+      swordTier,
+      armorTier,
+      checkpoint: checkpointData,
       updatedAt: new Date().toISOString(),
     };
     if (accountUser) {
@@ -152,6 +222,9 @@ function writeSave({ completedExpedition = false, recoveredRelics = 0 } = {}) {
             bestScore: Math.max(remote.bestScore, saveData.bestScore),
             expeditions: completedExpedition ? remote.expeditions + 1 : Math.max(remote.expeditions, saveData.expeditions),
             relicsFound: completedExpedition ? remote.relicsFound + recoveredRelics : Math.max(remote.relicsFound, saveData.relicsFound),
+            currentLevel: Math.max(remote.currentLevel, saveData.currentLevel),
+            swordTier: saveData.swordTier,
+            armorTier: saveData.armorTier,
           };
           transaction.set(profileRef, synchronized, { merge: true });
           return synchronized;
@@ -182,6 +255,7 @@ function writeSave({ completedExpedition = false, recoveredRelics = 0 } = {}) {
 }
 
 async function boot() {
+  applySave(saved);
   $('sound-toggle').checked = settings.sound;
   $('reduced-motion').checked = settings.reducedMotion;
   updateAccountSummary();
@@ -190,6 +264,7 @@ async function boot() {
   });
   $('signout-button').addEventListener('click', signOut);
   $('start-button').addEventListener('click', () => startGame(true));
+  $('continue-button').addEventListener('click', () => startGame(false));
   $('howto-button').addEventListener('click', () => showScreen('howto'));
   $('settings-button').addEventListener('click', () => showScreen('settings'));
   $('howto-back').addEventListener('click', () => showScreen('menu'));
@@ -198,6 +273,12 @@ async function boot() {
   $('restart-button').addEventListener('click', () => startGame(true));
   $('replay-button').addEventListener('click', () => startGame(true));
   $('menu-button').addEventListener('click', () => showScreen('menu'));
+  $('next-level-button').addEventListener('click', advanceLevel);
+  $('inventory-button').addEventListener('click', openInventory);
+  $('inventory-back').addEventListener('click', closeInventory);
+  $('game-canvas').addEventListener('pointerdown', (event) => {
+    if (event.button === 0 && state === 'playing') attack();
+  });
   $('pause-button').addEventListener('click', pauseGame);
   $('home-button').addEventListener('click', returnHome);
   $('pause-home-button').addEventListener('click', returnHome);
@@ -219,7 +300,7 @@ async function boot() {
     stick.active = false;
     stick.x = 0;
     stick.y = 0;
-    mobileButtons = { interact: false, jump: false, sprint: false };
+    mobileButtons = { interact: false, jump: false, sprint: false, attack: false };
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state === 'playing') pauseGame();
@@ -439,12 +520,18 @@ function setupThree() {
   }
 }
 
-function makeWorld() {
-  runSeed = Math.floor(Math.random() * 1000000) + 1;
+function makeWorld(resetScore = true, checkpoint = null) {
+  const resume = !resetScore && checkpoint?.level === currentLevel ? checkpoint : null;
+  runSeed = resume?.seed || Math.floor(Math.random() * 1000000) + 1;
   random = seededRandom(runSeed);
-  score = 0;
+  score = resume ? resume.score : resetScore ? 0 : score;
   health = 100;
   relics = 0;
+  gems = 0;
+  zombies = [];
+  zombiesDefeated = 0;
+  attackCooldown = 0;
+  attackTimer = 0;
   chestsOpened = 0;
   invulnerable = 0;
   elapsed = 0;
@@ -486,6 +573,8 @@ function makeWorld() {
   buildTorches();
   buildTrapsAndLoot();
   buildExplorer();
+  buildZombies();
+  if (resume) restoreCheckpoint(resume);
   updateHud();
 }
 
@@ -738,7 +827,7 @@ function makeChest(x, z, index) {
 
 function buildExplorer() {
   const group = new THREE.Group();
-  const robe = material(0x47584a);
+  const robe = material(ARMORS[armorTier].color);
   const leather = material(0x7b5531);
   const skin = material(0xc79267);
   const dark = material(0x302a22);
@@ -761,6 +850,19 @@ function buildExplorer() {
   packMesh.position.set(0, 1.42, .48);
   packMesh.castShadow = true;
   group.add(packMesh);
+  if (armorTier > 0) {
+    const armorPlate = material(ARMORS[armorTier].color, .48, { metalness: .38 });
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(.83, .56, .15), armorPlate);
+    chestPlate.position.set(0, 1.46, -.42);
+    chestPlate.castShadow = true;
+    group.add(chestPlate);
+    for (const side of [-1, 1]) {
+      const shoulder = new THREE.Mesh(new THREE.SphereGeometry(.24, 5, 4), armorPlate);
+      shoulder.position.set(side * .55, 1.78, -.04);
+      shoulder.castShadow = true;
+      group.add(shoulder);
+    }
+  }
   const limbs = [];
   for (const side of [-1, 1]) {
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(.13, .16, .78, 5), robe);
@@ -774,11 +876,79 @@ function buildExplorer() {
     group.add(leg);
     limbs.push({ arm, leg, side });
   }
+  swordMesh = new THREE.Group();
+  const weaponMetal = material(SWORDS[swordTier].color, .3, { metalness: .5 });
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(.055, .07, .34, 5), leather);
+  grip.position.y = .02;
+  swordMesh.add(grip);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(.38, .07, .1), weaponMetal);
+  guard.position.y = .22;
+  swordMesh.add(guard);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(.16, .68, .07), weaponMetal);
+  blade.position.y = .58;
+  blade.castShadow = true;
+  swordMesh.add(blade);
+  swordMesh.position.set(.68, 1.25, -.22);
+  swordMesh.rotation.z = -.35;
+  group.add(swordMesh);
   group.traverse((object) => {
     if (object.isMesh && object.material.color) object.userData.baseColor = object.material.color.getHex();
   });
   worldRoot.add(group);
   playerParts = { group, limbs };
+  syncPlayerMesh();
+  updateEquipmentReadout();
+}
+
+function createCheckpoint() {
+  if (!player) return null;
+  return {
+    version: 1,
+    level: currentLevel,
+    seed: runSeed,
+    score,
+    health,
+    x: player.x,
+    z: player.z,
+    yaw: player.yaw,
+    pickups: pickups.flatMap((pickup, index) => pickup.collected ? [index] : []),
+    chests: chests.flatMap((chest, index) => chest.opened ? [index] : []),
+    zombies: zombies.flatMap((zombie, index) => zombie.defeated ? [index] : []),
+  };
+}
+
+function restoreCheckpoint(checkpoint) {
+  player.x = checkpoint.x;
+  player.z = checkpoint.z;
+  player.yaw = checkpoint.yaw;
+  if (collides(player.x, player.z)) {
+    player.x = 0;
+    player.z = 29;
+  }
+  health = checkpoint.health;
+  for (const index of checkpoint.pickups) {
+    const pickup = pickups[index];
+    if (!pickup || pickup.collected) continue;
+    pickup.collected = true;
+    if (pickup.mesh) pickup.mesh.visible = false;
+    if (pickup.kind === 'relic') relics++;
+    if (pickup.kind === 'gem') gems++;
+  }
+  for (const index of checkpoint.chests) {
+    const chest = chests[index];
+    if (!chest || chest.opened) continue;
+    chest.opened = true;
+    chest.lid.rotation.x = -.82;
+    chest.lid.position.z = -.31;
+    chest.lid.position.y = 1.03;
+  }
+  for (const index of checkpoint.zombies) {
+    const zombie = zombies[index];
+    if (!zombie || zombie.defeated) continue;
+    zombie.defeated = true;
+    zombie.group.visible = false;
+    zombiesDefeated++;
+  }
   syncPlayerMesh();
 }
 
@@ -786,6 +956,157 @@ function syncPlayerMesh() {
   if (!playerParts) return;
   playerParts.group.position.set(player.x, player.y, player.z);
   playerParts.group.rotation.y = player.yaw;
+}
+
+function buildZombies() {
+  const spawnPoints = [
+    [-26, -24], [26, -25], [-27, -8], [27, -7], [-25, 12], [25, 20],
+    [-17, 25], [17, -22], [-3, -26], [4, 19], [-30, 2], [30, -18],
+    [-14, -29], [14, 27],
+  ];
+  const count = Math.min(spawnPoints.length, 3 + Math.floor((currentLevel - 1) / 2));
+  const firstSpawn = [4, 19];
+  const candidates = [
+    firstSpawn,
+    ...spawnPoints.filter(([x, z]) => x !== firstSpawn[0] || z !== firstSpawn[1])
+    .map((point) => ({ point, order: random() }))
+    .sort((a, b) => a.order - b.order)
+    .map(({ point }) => point),
+  ];
+  const healthScale = 1 + Math.log2(currentLevel) * .18;
+
+  for (let index = 0; index < count; index++) {
+    const [x, z] = candidates[index];
+    const guardian = index === count - 1;
+    const armored = !guardian && currentLevel >= 4 && index % 4 === 1;
+    const runner = !guardian && !armored && currentLevel >= 2 && index % 3 === 1;
+    const type = guardian ? 'guardian' : armored ? 'armored' : runner ? 'runner' : 'basic';
+    const colors = { basic: 0x65785d, runner: 0x8a7555, armored: 0x697c82, guardian: 0x674b47 };
+    const skin = material(colors[type], .88, { roughness: .92 });
+    const shadow = material(0x392f29);
+    const eye = new THREE.MeshBasicMaterial({ color: guardian ? 0xff6c43 : 0xb5ef84 });
+    const group = new THREE.Group();
+    const scale = guardian ? 1.2 : armored ? 1.08 : 1;
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(.77, 1.1, .45), skin);
+    torso.position.y = 1.25;
+    torso.rotation.z = -.08;
+    torso.castShadow = true;
+    group.add(torso);
+    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.34, 0), skin);
+    head.position.set(0, 2.02, -.02);
+    head.castShadow = true;
+    group.add(head);
+    for (const side of [-1, 1]) {
+      const eyeMesh = new THREE.Mesh(new THREE.SphereGeometry(.055, 5, 4), eye);
+      eyeMesh.position.set(side * .12, 2.04, -.29);
+      group.add(eyeMesh);
+    }
+    const limbs = [];
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(.12, .15, .8, 5), skin);
+      arm.position.set(side * .49, 1.35, -.12);
+      arm.rotation.z = side * -.3;
+      arm.castShadow = true;
+      group.add(arm);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.17, .2, .7, 5), shadow);
+      leg.position.set(side * .2, .4, .02);
+      leg.castShadow = true;
+      group.add(leg);
+      limbs.push({ arm, leg, side });
+    }
+    if (armored || guardian) {
+      const plateMaterial = material(guardian ? 0x8a4938 : 0x8d9995, .52, { metalness: .32 });
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(.94, .45, .52), plateMaterial);
+      plate.position.set(0, 1.54, -.05);
+      plate.castShadow = true;
+      group.add(plate);
+    }
+    const bar = new THREE.Group();
+    const barBg = new THREE.Mesh(new THREE.BoxGeometry(1.12, .09, .035), material(0x211a16));
+    const barFill = new THREE.Mesh(new THREE.BoxGeometry(1.04, .055, .04), material(0xd46c54, .65, { emissive: 0x4e160c, emissiveIntensity: .25 }));
+    barFill.position.z = -.025;
+    bar.add(barBg, barFill);
+    bar.position.set(0, 2.62, 0);
+    group.add(bar);
+    group.scale.setScalar(scale);
+    group.position.set(x, 0, z);
+    worldRoot.add(group);
+    const baseHealth = guardian ? 72 : armored ? 62 : runner ? 32 : 42;
+    zombies.push({
+      type,
+      group,
+      limbs,
+      barFill,
+      x,
+      z,
+      health: Math.ceil(baseHealth * healthScale),
+      maxHealth: Math.ceil(baseHealth * healthScale),
+      speed: (guardian ? 1.25 : runner ? 2.35 : armored ? 1.15 : 1.55) + Math.log2(currentLevel) * .09,
+      damage: 5 + Math.floor(Math.log2(currentLevel) * 1.5) + (guardian ? 3 : 0),
+      attackCooldown: .7 + random() * 1.4,
+      alert: false,
+      phase: random() * Math.PI * 2,
+      scale,
+    });
+  }
+}
+
+function updateEquipmentReadout() {
+  const swordLabel = $('sword-label');
+  const armorLabel = $('armor-label');
+  if (swordLabel) swordLabel.textContent = SWORDS[swordTier].name.toUpperCase();
+  if (armorLabel) armorLabel.textContent = ARMORS[armorTier].name.toUpperCase();
+}
+
+function renderInventory() {
+  $('inventory-summary').textContent = `Level ${currentLevel} · Complete expeditions to unlock higher tiers.`;
+  const populate = (containerId, items, activeTier, kind) => {
+    const container = $(containerId);
+    container.replaceChildren();
+    items.forEach((item, tier) => {
+      const button = document.createElement('button');
+      const unlocked = currentLevel >= tier * 2 + 1;
+      button.className = `equipment-option${activeTier === tier ? ' equipped' : ''}`;
+      button.disabled = !unlocked;
+      const title = document.createElement('strong');
+      title.textContent = item.name.toUpperCase();
+      const detail = document.createElement('small');
+      detail.textContent = kind === 'sword'
+        ? `${item.damage} DAMAGE  ·  ${item.cooldown.toFixed(2)}s RECOVERY${unlocked ? activeTier === tier ? '  ·  EQUIPPED' : '' : '  ·  UNLOCKS LEVEL ' + (tier * 2 + 1)}`
+        : `${Math.round(item.reduction * 100)}% DAMAGE REDUCTION${unlocked ? activeTier === tier ? '  ·  EQUIPPED' : '' : '  ·  UNLOCKS LEVEL ' + (tier * 2 + 1)}`;
+      button.append(title, detail);
+      button.addEventListener('click', () => {
+        if (kind === 'sword') swordTier = tier;
+        else armorTier = tier;
+        writeSave();
+        renderInventory();
+        updateEquipmentReadout();
+        if (playerParts) {
+          worldRoot.remove(playerParts.group);
+          playerParts = null;
+          buildExplorer();
+        }
+      });
+      container.append(button);
+    });
+  };
+  populate('sword-options', SWORDS, swordTier, 'sword');
+  populate('armor-options', ARMORS, armorTier, 'armor');
+}
+
+function openInventory() {
+  if (state !== 'playing') return;
+  state = 'inventory';
+  renderInventory();
+  showScreen('inventory');
+  stopAmbience();
+}
+
+function closeInventory() {
+  if (state !== 'inventory') return;
+  state = 'playing';
+  showScreen(null);
+  startAmbience();
 }
 
 function addParticle(x, y, z, color = 0xffc06d) {
@@ -799,7 +1120,15 @@ function startGame(newRun = false) {
     setAccountStatus('Wait for your account save to finish loading, or sign out to play as a guest.', true);
     return;
   }
-  if (newRun || state === 'menu' || state === 'victory' || state === 'defeat') makeWorld();
+  if (newRun) {
+    currentLevel = 1;
+    swordTier = 0;
+    armorTier = 0;
+  }
+  if (newRun || state === 'menu' || state === 'victory' || state === 'defeat') {
+    const checkpoint = !newRun && state === 'menu' ? activeSave()?.checkpoint : null;
+    makeWorld(newRun || (state === 'menu' && !checkpoint), checkpoint);
+  }
   state = 'playing';
   showScreen(null);
   ui.hud.classList.remove('is-hidden');
@@ -810,7 +1139,7 @@ function startGame(newRun = false) {
 }
 
 function showScreen(name) {
-  for (const [key, element] of Object.entries({ menu: ui.menu, howto: ui.howto, settings: ui.settings, pause: ui.pause, result: ui.result })) {
+  for (const [key, element] of Object.entries({ menu: ui.menu, howto: ui.howto, settings: ui.settings, inventory: $('inventory-screen'), pause: ui.pause, result: ui.result })) {
     element.classList.toggle('is-hidden', key !== name);
   }
   if (name === 'menu') {
@@ -837,11 +1166,12 @@ function resumeGame() {
 
 function returnHome() {
   if (state === 'menu') return;
+  writeSave();
   keys = Object.create(null);
   stick.active = false;
   stick.x = 0;
   stick.y = 0;
-  mobileButtons = { interact: false, jump: false, sprint: false };
+  mobileButtons = { interact: false, jump: false, sprint: false, attack: false };
   ui.prompt.classList.remove('visible');
   ui.toast.classList.remove('show');
   showScreen('menu');
@@ -849,7 +1179,9 @@ function returnHome() {
 
 function finishGame(won) {
   if (state !== 'playing') return;
+  const completedLevel = currentLevel;
   state = won ? 'victory' : 'defeat';
+  if (won && currentLevel < Number.MAX_SAFE_INTEGER) currentLevel++;
   stopAmbience();
   ui.hud.classList.add('is-hidden');
   ui.mobile.classList.add('is-hidden');
@@ -858,21 +1190,39 @@ function finishGame(won) {
   ui.howto.classList.add('is-hidden');
   ui.settings.classList.add('is-hidden');
   ui.pause.classList.add('is-hidden');
-  $('result-kicker').textContent = won ? 'EXPEDITION COMPLETE' : 'EXPEDITION ENDED';
-  $('result-title').innerHTML = won ? 'THE TEMPLE <em>RELEASES YOU</em>' : 'LOST TO THE <em>RUINS</em>';
+  $('result-kicker').textContent = won ? `LEVEL ${completedLevel} COMPLETE` : 'EXPEDITION ENDED';
+  $('result-title').innerHTML = won ? 'THE SEAL IS <em>BROKEN</em>' : 'LOST TO THE <em>UNDEAD</em>';
   $('result-copy').textContent = won
-    ? `You recovered every relic and escaped with ${String(score).padStart(6, '0')} points. The story of the Lost Temple is yours to tell.`
-    : `The ruins claimed your expedition. You recovered ${relics} of 3 relics and earned ${String(score).padStart(6, '0')} points.`;
+    ? `Level ${completedLevel}: ${relics}/3 relics, ${gems} gems, and ${zombiesDefeated} zombies defeated. Your score is ${String(score).padStart(6, '0')}.`
+    : `The undead claimed the expedition. You recovered ${relics} relics and defeated ${zombiesDefeated} zombies for ${String(score).padStart(6, '0')} points.`;
   $('result-score').textContent = String(score).padStart(6, '0');
   const profile = activeSave();
-  profile.expeditions++;
-  profile.relicsFound += relics;
+  if (won) {
+    profile.expeditions++;
+    profile.relicsFound += relics;
+  }
+  $('next-level-button').classList.toggle('is-hidden', !won || currentLevel >= Number.MAX_SAFE_INTEGER);
+  $('replay-button').classList.toggle('is-hidden', won);
   updateAccountSummary();
-  writeSave({ completedExpedition: true, recoveredRelics: relics });
+  writeSave({ completedExpedition: won, recoveredRelics: won ? relics : 0, clearCheckpoint: true });
   audioPing(won ? 660 : 120, .25, won ? 'triangle' : 'sawtooth', .06);
 }
 
+function advanceLevel() {
+  if (state !== 'victory' || currentLevel >= Number.MAX_SAFE_INTEGER) return;
+  const maxTier = Math.min(3, Math.floor((currentLevel - 1) / 2));
+  if (swordTier < maxTier || armorTier < maxTier) showToast(`${SWORDS[maxTier].name.toUpperCase()} AND ${ARMORS[maxTier].name.toUpperCase()} UNLOCKED`);
+  writeSave();
+  startGame(false);
+}
+
 function onKeyDown(event) {
+  if (event.code === 'KeyI' || event.key.toLowerCase() === 'i') {
+    if (state === 'playing') openInventory();
+    else if (state === 'inventory') closeInventory();
+    event.preventDefault();
+    return;
+  }
   const key = keyForEvent(event);
   if (!key) return;
   if (state === 'playing' && (key.startsWith('arrow') || key === ' ')) event.preventDefault();
@@ -890,6 +1240,7 @@ function onKeyDown(event) {
     if (state === 'playing') pauseGame();
     else if (state === 'paused') resumeGame();
   }
+  if (key === 'f' && state === 'playing') attack();
   if ((key === 'e' || key === 'enter') && state === 'playing') interact();
 }
 
@@ -909,10 +1260,12 @@ function keyForEvent(event) {
   if (event.code === 'KeyP') return 'p';
   if (event.code === 'KeyH') return 'h';
   if (event.code === 'KeyE') return 'e';
+  if (event.code === 'KeyF') return 'f';
+  if (event.code === 'KeyI') return 'i';
   if (event.code === 'Enter') return 'enter';
   if (event.code === 'ArrowUp' || event.code === 'ArrowDown' || event.code === 'ArrowLeft' || event.code === 'ArrowRight') return event.code.toLowerCase();
   const key = event.key.toLowerCase();
-  return ['w', 'a', 's', 'd', 'shift', ' ', 'escape', 'p', 'h', 'e', 'enter', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key) ? key : null;
+  return ['w', 'a', 's', 'd', 'shift', ' ', 'escape', 'p', 'h', 'e', 'f', 'i', 'enter', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key) ? key : null;
 }
 
 function setupTouchControls() {
@@ -942,6 +1295,7 @@ function setupTouchControls() {
 
   bindTouchButton($('mobile-jump'), 'jump');
   bindTouchButton($('mobile-interact'), 'interact');
+  bindTouchButton($('mobile-attack'), 'attack');
   bindTouchButton($('mobile-sprint'), 'sprint');
 }
 
@@ -964,6 +1318,7 @@ function bindTouchButton(button, action) {
     event.preventDefault();
     mobileButtons[action] = true;
     if (action === 'interact') interact();
+    if (action === 'attack') attack();
   };
   const release = () => { mobileButtons[action] = false; };
   button.addEventListener('pointerdown', press);
@@ -987,6 +1342,9 @@ function update(dt) {
   }
   elapsed += dt;
   invulnerable = Math.max(0, invulnerable - dt);
+  attackCooldown = Math.max(0, attackCooldown - dt);
+  attackTimer = Math.max(0, attackTimer - dt);
+  if (swordMesh) swordMesh.rotation.z = attackTimer > 0 ? -.35 - Math.sin((.24 - attackTimer) / .24 * Math.PI) * 1.15 : -.35;
   const input = movementInput();
   const sprinting = keys.shift || mobileButtons.sprint;
   const speed = sprinting ? 9 : 5.8;
@@ -1000,7 +1358,7 @@ function update(dt) {
     if (!collides(nextX, player.z)) player.x = nextX;
     const nextZ = player.z + dz;
     if (!collides(player.x, nextZ)) player.z = nextZ;
-    player.yaw = Math.atan2(-moveX, -moveZ);
+    player.yaw = Math.atan2(moveX, -moveZ);
   }
   player.x = clamp(player.x, -38.5, 38.5);
   player.z = clamp(player.z, -38.5, 38.5);
@@ -1068,7 +1426,9 @@ function updateWorld(dt) {
   for (const chest of chests) {
     if (!chest.opened && chest.group) chest.group.position.y = Math.sin(elapsed * 1.7 + chest.phase) * .035;
   }
-  if (exitGate && !exitGate.open && relics >= 3) {
+  if (state === 'playing') updateZombieAI(dt);
+  const objectivesComplete = relics >= 3 && gems >= 4 && zombiesDefeated >= zombies.length;
+  if (exitGate && !exitGate.open && objectivesComplete) {
     exitGate.open = true;
     if (exitGate.mesh) exitGate.mesh.visible = false;
     solidRects = solidRects.filter((rect) => !(Math.abs(rect.x) < .01 && Math.abs(rect.z + 32) < .01));
@@ -1090,6 +1450,83 @@ function updateWorld(dt) {
   }
 }
 
+function attack() {
+  if (state !== 'playing' || attackCooldown > 0) return;
+  attackCooldown = SWORDS[swordTier].cooldown;
+  attackTimer = .24;
+  audioPing(swordTier >= 2 ? 310 : 230, .09, 'triangle', .055);
+  const forwardX = Math.sin(player.yaw);
+  const forwardZ = -Math.cos(player.yaw);
+  let target = null;
+  let nearest = Infinity;
+  for (const zombie of zombies) {
+    if (zombie.defeated) continue;
+    const dx = zombie.x - player.x;
+    const dz = zombie.z - player.z;
+    const range = Math.hypot(dx, dz);
+    const facing = (dx * forwardX + dz * forwardZ) / Math.max(range, .001);
+    if (range <= 3.65 && facing > -.18 && range < nearest) {
+      nearest = range;
+      target = zombie;
+    }
+  }
+  if (!target) {
+    showToast('SWORD SWING  ·  NO ZOMBIE IN REACH');
+    return;
+  }
+  target.health = Math.max(0, target.health - SWORDS[swordTier].damage);
+  target.barFill.scale.x = Math.max(.001, target.health / target.maxHealth);
+  target.barFill.position.x = -.52 * (1 - target.health / target.maxHealth);
+  target.group.rotation.y = player.yaw + Math.PI + (random() - .5) * .25;
+  for (let i = 0; i < 5; i++) addParticle(target.x, 1 + random() * 1.4, target.z, target.type === 'guardian' ? 0xf0805b : 0xa8cb7d);
+  if (target.health === 0) {
+    target.defeated = true;
+    target.group.visible = false;
+    zombiesDefeated++;
+    score += target.type === 'guardian' ? 450 : 180;
+    showToast(`${target.type.toUpperCase()} DEFEATED  ·  +${target.type === 'guardian' ? 450 : 180}`);
+    audioPing(520, .14, 'triangle', .06);
+    writeSave();
+  } else {
+    showToast(`HIT  ·  ${target.health} ZOMBIE VITALITY REMAINING`);
+  }
+  updateHud();
+}
+
+function updateZombieAI(dt) {
+  for (const zombie of zombies) {
+    if (zombie.defeated) continue;
+    const dx = player.x - zombie.x;
+    const dz = player.z - zombie.z;
+    const distanceToPlayer = Math.hypot(dx, dz);
+    zombie.alert = zombie.alert || distanceToPlayer < 26;
+    zombie.attackCooldown = Math.max(0, zombie.attackCooldown - dt);
+    if (zombie.alert && distanceToPlayer > 1.55) {
+      const step = zombie.speed * dt;
+      const moveX = dx / Math.max(distanceToPlayer, .001) * step;
+      const moveZ = dz / Math.max(distanceToPlayer, .001) * step;
+      if (!collides(zombie.x + moveX, zombie.z)) zombie.x += moveX;
+      if (!collides(zombie.x, zombie.z + moveZ)) zombie.z += moveZ;
+      zombie.group.rotation.y = Math.atan2(moveX, -moveZ);
+    } else if (!zombie.alert) {
+      const wander = Math.sin(elapsed * .42 + zombie.phase) * .22 * dt;
+      if (!collides(zombie.x + wander, zombie.z)) zombie.x += wander;
+      zombie.group.rotation.y = Math.sin(elapsed * .4 + zombie.phase) * .22;
+    }
+    zombie.group.position.x = zombie.x;
+    zombie.group.position.z = zombie.z;
+    const stride = zombie.alert && distanceToPlayer > 1.55 ? Math.sin(elapsed * (zombie.type === 'runner' ? 13 : 8) + zombie.phase) * .55 : Math.sin(elapsed * 1.7 + zombie.phase) * .07;
+    for (const limb of zombie.limbs) {
+      limb.leg.rotation.x = stride * limb.side;
+      limb.arm.rotation.x = zombie.alert ? -.65 - stride * limb.side * .35 : -.18;
+    }
+    if (distanceToPlayer < 1.65 && zombie.attackCooldown <= 0) {
+      zombie.attackCooldown = zombie.type === 'runner' ? 1.35 : zombie.type === 'guardian' ? 1.8 : 1.65;
+      damage(zombie.damage, `${zombie.type.toUpperCase()} BITE`);
+    }
+  }
+}
+
 function checkTriggers() {
   for (const pickup of pickups) {
     if (pickup.collected || distance(player.x, player.z, pickup.x, pickup.z) > (pickup.kind === 'relic' ? 1.65 : 1.15)) continue;
@@ -1101,10 +1538,13 @@ function checkTriggers() {
       showToast(`ANCIENT RELIC RECOVERED  ·  ${relics}/3`);
       audioPing(640, .22, 'sine', .075);
       for (let i = 0; i < 12; i++) addParticle(pickup.x, 1 + random(), pickup.z, 0x70e4d1);
+      writeSave();
     } else {
       score += pickup.kind === 'gem' ? 100 : 35;
+      if (pickup.kind === 'gem') gems++;
       audioPing(pickup.kind === 'gem' ? 520 : 420, .08, 'sine', .04);
-      if (pickup.kind === 'gem') showToast('TEMPLE GEM  +100');
+      if (pickup.kind === 'gem') showToast(`TEMPLE GEM  ·  ${gems}/4 REQUIRED`);
+      if (pickup.kind === 'gem') writeSave();
     }
     updateHud();
   }
@@ -1112,15 +1552,16 @@ function checkTriggers() {
   for (const trap of traps) {
     if (!trap.active || trap.cooldown > 0 || player.y > .34 || distance(player.x, player.z, trap.x, trap.z) > 1.38) continue;
     trap.cooldown = 1.4;
-    damage(34);
+    damage(34, 'SPIKE TRAP');
   }
 
   if (exitGate?.open && distance(player.x, player.z, exitGate.x, exitGate.z - 1.2) < 2) finishGame(true);
 }
 
-function damage(amount) {
+function damage(amount, source = 'TEMPLE HAZARD') {
   if (invulnerable > 0) return;
-  health = Math.max(0, health - amount);
+  const actualDamage = Math.max(1, Math.ceil(amount * (1 - ARMORS[armorTier].reduction)));
+  health = Math.max(0, health - actualDamage);
   invulnerable = 1.1;
   if (playerParts) playerParts.group.traverse((object) => {
     if (object.isMesh && object.material.color) object.material.color.setHex(0xd16f5c);
@@ -1132,9 +1573,10 @@ function damage(amount) {
       });
     }
   }, 230);
-  showToast(`SPIKE TRAP  ·  -${amount} VITALITY`);
+  showToast(`${source}  ·  -${actualDamage} VITALITY`);
   audioPing(105, .14, 'sawtooth', .06);
   updateHud();
+  writeSave();
 }
 
 function collides(x, z) {
@@ -1162,6 +1604,7 @@ function interact() {
     audioPing(730, .25, 'triangle', .065);
     for (let i = 0; i < 10; i++) addParticle(chest.x, 1 + random() * .8, chest.z, 0xffd07a);
     updateHud();
+    writeSave();
     return;
   }
   const nearby = pickups.find((pickup) => !pickup.collected && pickup.kind === 'relic' && distance(player.x, player.z, pickup.x, pickup.z) < 2);
@@ -1175,6 +1618,12 @@ function updatePrompt() {
     ui.prompt.classList.add('visible');
     return;
   }
+  const nearbyZombie = zombies.some((zombie) => distance(player.x, player.z, zombie.x, zombie.z) < 3.4);
+  if (nearbyZombie) {
+    ui.prompt.textContent = 'F / CLICK  ·  STRIKE ZOMBIE';
+    ui.prompt.classList.add('visible');
+    return;
+  }
   ui.prompt.classList.remove('visible');
 }
 
@@ -1183,7 +1632,12 @@ function updateHud() {
   ui.healthValue.textContent = String(Math.ceil(health));
   ui.relics.innerHTML = `<span class="relic-mark" aria-hidden="true"></span> ${relics} <small>/ 3</small>`;
   ui.score.textContent = String(score).padStart(6, '0');
-  if (relics < 3) ui.objective.textContent = `Find the three ancient relics  ·  ${relics}/3`;
+  ui.zombies.textContent = String(Math.max(0, zombies.length - zombiesDefeated));
+  ui.level.textContent = `LEVEL ${currentLevel}`;
+  updateEquipmentReadout();
+  if (relics < 3) ui.objective.textContent = `Relics ${relics}/3  ·  Gems ${gems}/4  ·  Undead ${zombies.length - zombiesDefeated}`;
+  else if (gems < 4) ui.objective.textContent = `Relic secured  ·  Find ${4 - gems} more gems  ·  Undead ${zombies.length - zombiesDefeated}`;
+  else if (zombiesDefeated < zombies.length) ui.objective.textContent = `Collectibles secured  ·  Defeat ${zombies.length - zombiesDefeated} zombies`;
   else ui.objective.textContent = 'The northern seal is broken — reach the gate';
   ui.health.style.background = health <= 33 ? 'linear-gradient(90deg,#bf544d,#df8866)' : 'linear-gradient(90deg,#d7785c,#edb46d)';
 }

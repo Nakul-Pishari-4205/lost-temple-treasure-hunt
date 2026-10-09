@@ -24,11 +24,18 @@ Firebase user ID.
    each device using the same provider and account to load the same profile.
 
 The account profile syncs sound and reduced-motion settings, personal-best score,
-completed expeditions, and recovered relic totals. Cloud updates use Firestore
-transactions so simultaneous sessions preserve the best score and add expedition
-totals without overwriting another device's newer save. Signing out returns to the
-device-local guest profile; guest data is never automatically copied into an
-account. Switching accounts loads a different UID-scoped profile.
+completed expeditions, recovered relic totals, current level, equipped gear, and a
+gameplay checkpoint. Cloud updates use Firestore transactions to preserve the
+personal best and expedition totals. Signing out returns to the device-local guest
+profile; guest data is never automatically copied into an account. Switching
+accounts loads a different UID-scoped profile.
+
+These are client-written game values, not server-verified competitive scores or
+anti-cheat records. GitHub Pages cannot run trusted game logic. This repository
+does not currently include a deployed trusted backend, an owner-provisioning
+function, or the owner-only Administrator Dashboard; do not use these client
+profile fields to authorize administrative actions or issue valuable rewards.
+See `ZOMBIE_SURVIVAL.md` for the implemented gameplay and remaining scope.
 
 ## Local testing
 

@@ -4,15 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#111510">
-    <meta name="description" content="Explore a forgotten temple, dodge its traps, and recover the lost relics.">
-    <title>Treasure Hunt: Lost Temple</title>
+    <meta name="description" content="Survive the Lost Temple, fight the undead, recover its relic, and escape.">
+    <title>Treasure Hunt Game — Lost Temple: Zombie Survival</title>
     <link rel="icon" type="image/svg+xml" href="temple-mark.svg">
     <link rel="apple-touch-icon" href="temple-mark.svg">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main id="game-shell" aria-label="Treasure Hunt: Lost Temple game">
+    <main id="game-shell" aria-label="Treasure Hunt: Lost Temple Zombie Survival game">
       <div id="game-view" aria-label="Game world" role="application">
         <canvas id="game-canvas" aria-label="Explore the temple with the controls shown on screen"></canvas>
       </div>
@@ -31,8 +31,12 @@
             <span class="hud-label">RELICS RECOVERED</span>
             <div id="relic-count" class="relic-count"><span class="relic-mark" aria-hidden="true"></span> 0 <small>/ 3</small></div>
           </section>
+          <section class="hud-card threat-card">
+            <span class="hud-label">UNDEAD REMAINING</span>
+            <div id="zombie-count" class="score-value">0</div>
+          </section>
           <section class="hud-card score-card">
-            <span class="hud-label">SCORE</span>
+            <span id="level-label" class="hud-label">LEVEL 1</span>
             <div id="score-value" class="score-value">000000</div>
           </section>
           <button id="pause-button" class="icon-button pause-button" aria-label="Pause game" title="Pause (P)">
@@ -47,11 +51,14 @@
         <div class="hud-bottom">
           <div class="hud-briefing">
             <div class="objective-pill"><span class="objective-dot"></span><span id="objective-text">Find the three ancient relics</span></div>
-            <div class="control-legend" aria-label="Controls: W A S D move, Shift sprint, Space jump, E interact, P pause, Escape or H return home">
+            <div class="equipment-readout"><span id="sword-label">WOOD SWORD</span><span id="armor-label">LEATHER ARMOR</span><button id="inventory-button" class="inventory-button" title="Inventory (I)">INVENTORY <kbd>I</kbd></button></div>
+            <div class="control-legend" aria-label="Controls: W A S D move, Shift sprint, Space jump, F or left mouse button attack, E interact, I inventory, P pause, Escape or H return home">
               <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> MOVE</span>
               <span><kbd>SHIFT</kbd> SPRINT</span>
               <span><kbd>SPACE</kbd> JUMP</span>
+              <span><kbd>F</kbd> / MOUSE ATTACK</span>
               <span><kbd>E</kbd> INTERACT</span>
+              <span><kbd>I</kbd> INVENTORY</span>
               <span><kbd>P</kbd> PAUSE</span>
               <span><kbd>ESC</kbd><kbd>H</kbd> RETURN TO HOME</span>
             </div>
@@ -65,7 +72,7 @@
       <section id="menu-screen" class="screen">
         <div class="menu-backdrop"></div>
         <div class="menu-content">
-          <div class="eyebrow"><span class="eyebrow-line"></span> AN ADVENTURE AWAITS <span class="eyebrow-line"></span></div>
+          <div class="eyebrow"><span class="eyebrow-line"></span> AN UNDEAD ADVENTURE AWAITS <span class="eyebrow-line"></span></div>
           <div class="title-mark" aria-hidden="true">
             <span class="title-diamond"></span>
             <span class="title-sun"></span>
@@ -75,8 +82,9 @@
             <img class="temple-logo" src="temple-mark.svg" alt="" width="72" height="72">
             <h1>THE LOST<br><em>TEMPLE</em></h1>
           </div>
-          <p class="menu-subtitle">A forgotten world. Three lost relics.<br>One chance to make it out alive.</p>
+          <p class="menu-subtitle">Treasure Hunt Game — Lost Temple: Zombie Survival<br>Three relics. A temple full of the risen dead.</p>
           <button id="start-button" class="primary-button"><span>BEGIN EXPEDITION</span><b aria-hidden="true"></b></button>
+          <button id="continue-button" class="secondary-button continue-button">CONTINUE ADVENTURE</button>
           <div class="menu-links">
             <button id="howto-button" class="text-button">HOW TO PLAY</button>
             <span aria-hidden="true">·</span>
@@ -116,7 +124,7 @@
         <div class="panel">
           <div class="panel-kicker">FIELD NOTES · 01</div>
           <h2>HOW TO <em>PLAY</em></h2>
-          <p class="panel-intro">The temple has been quiet for centuries. Keep it that way. On touchscreens, use the left stick and on-screen action buttons.</p>
+          <p class="panel-intro">Recover three relics, collect temple gems, and defeat every undead guardian to unlock the gate. On touchscreens, use the left stick and action buttons.</p>
           <div class="instruction-grid">
             <div class="instruction">
               <div class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>
@@ -135,12 +143,33 @@
               <div><strong>INTERACT</strong><span>Open chests and claim treasure</span></div>
             </div>
             <div class="instruction">
+              <div class="key-group"><kbd>F</kbd></div>
+              <div><strong>ATTACK</strong><span>Press F or left-click to strike nearby zombies</span></div>
+            </div>
+            <div class="instruction">
+              <div class="key-group"><kbd>I</kbd></div>
+              <div><strong>INVENTORY</strong><span>Equip unlocked swords and armor</span></div>
+            </div>
+            <div class="instruction">
               <div class="key-group"><kbd>H</kbd></div>
               <div><strong>RETURN TO HOME</strong><span>Press Escape or H to return to the title screen</span></div>
             </div>
           </div>
-          <div class="howto-tip"><span class="tip-spark" aria-hidden="true"></span> Find all <b>three relics</b>, then reach the sealed gate in the north. Avoid the spikes — you only have three chances.</div>
+          <div class="howto-tip"><span class="tip-spark" aria-hidden="true"></span> Find all <b>three relics</b>, collect at least four gems, and defeat every zombie before reaching the sealed gate. Avoid the spikes and incoming attacks.</div>
           <button id="howto-back" class="primary-button"><span>GOT IT</span><b aria-hidden="true"></b></button>
+        </div>
+      </section>
+
+      <section id="inventory-screen" class="screen is-hidden">
+        <div class="panel inventory-panel">
+          <div class="panel-kicker">FIELD EQUIPMENT</div>
+          <h2>ARMORY &amp; <em>PACK</em></h2>
+          <p id="inventory-summary" class="panel-intro">Recover relics and complete expeditions to unlock stronger equipment.</p>
+          <h3>SWORDS</h3>
+          <div id="sword-options" class="equipment-options"></div>
+          <h3>ARMOR</h3>
+          <div id="armor-options" class="equipment-options"></div>
+          <button id="inventory-back" class="primary-button"><span>RETURN TO EXPEDITION</span><b aria-hidden="true"></b></button>
         </div>
       </section>
 
@@ -181,6 +210,7 @@
           <p id="result-copy" class="panel-intro"></p>
           <div class="result-score"><span>FINAL SCORE</span><strong id="result-score">000000</strong></div>
           <button id="replay-button" class="primary-button"><span>PLAY AGAIN</span><b aria-hidden="true"></b></button>
+          <button id="next-level-button" class="primary-button is-hidden"><span>CONTINUE TO NEXT LEVEL</span><b aria-hidden="true"></b></button>
           <button id="menu-button" class="secondary-button">RETURN TO MENU</button>
         </div>
       </section>
@@ -189,6 +219,7 @@
         <div id="move-stick" class="move-stick" role="application" aria-label="Movement joystick"><div class="stick-knob"></div></div>
         <div class="mobile-actions">
           <button id="mobile-interact" class="touch-button interact-touch" aria-label="Interact">E</button>
+          <button id="mobile-attack" class="touch-button attack-touch" aria-label="Attack">F</button>
           <button id="mobile-sprint" class="touch-button sprint-touch" aria-label="Sprint">RUN</button>
           <button id="mobile-jump" class="touch-button jump-touch" aria-label="Jump"><span class="jump-icon" aria-hidden="true"></span></button>
         </div>
@@ -199,6 +230,7 @@
         <span>UNFOLDING THE MAP</span>
         <div class="loading-track"><i></i></div>
       </div>
+      <div class="creator-credit">Created by Pishari Nakul</div>
     </main>
     <script type="module" src="game.js"></script>
   </body>

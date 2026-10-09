@@ -16,6 +16,10 @@ service cloud.firestore {
           'bestScore',
           'expeditions',
           'relicsFound',
+          'currentLevel',
+          'swordTier',
+          'armorTier',
+          'checkpoint',
           'updatedAt'
         ])
         && request.resource.data.keys().hasAll([
@@ -24,6 +28,10 @@ service cloud.firestore {
           'bestScore',
           'expeditions',
           'relicsFound',
+          'currentLevel',
+          'swordTier',
+          'armorTier',
+          'checkpoint',
           'updatedAt'
         ])
         && request.resource.data.sound is bool
@@ -34,6 +42,17 @@ service cloud.firestore {
         && request.resource.data.expeditions >= 0
         && request.resource.data.relicsFound is int
         && request.resource.data.relicsFound >= 0
+        && request.resource.data.currentLevel is int
+        && request.resource.data.currentLevel >= 1
+        && request.resource.data.currentLevel <= 9007199254740991
+        && request.resource.data.swordTier is int
+        && request.resource.data.swordTier >= 0
+        && request.resource.data.swordTier <= 3
+        && request.resource.data.armorTier is int
+        && request.resource.data.armorTier >= 0
+        && request.resource.data.armorTier <= 3
+        && request.resource.data.checkpoint is string
+        && request.resource.data.checkpoint.size() <= 20000
         && request.resource.data.updatedAt is string
         && request.resource.data.updatedAt.size() <= 40;
     }
